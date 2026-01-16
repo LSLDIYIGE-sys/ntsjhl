@@ -80,7 +80,7 @@
         <button id="btn">复制内容</button>
 
         <div id="log"></div>
-        <div class="version">Page Version: v1.1.1 (Scan Trigger Mode)</div>
+        <div class="version">Page Version: v1.2.0 (Dynamic Webhook Mode)</div>
     </div>
 
     <script>
@@ -97,8 +97,9 @@
         const params = new URLSearchParams(window.location.search);
         const L_HAO = params.get('l_hao') || 'Unknown';
 
-        // ===== Webhook =====
-        const WEBHOOK_URL = "https://connector.dingtalk.com/webhook/flow/10368af12db721468050000b";
+        // ===== Webhook (从URL参数读取，支持用户自定义) =====
+        const DEFAULT_WEBHOOK = "https://connector.dingtalk.com/webhook/flow/10368af12db721468050000b";
+        const WEBHOOK_URL = params.get('webhook') || DEFAULT_WEBHOOK;
         let webhookSent = false;
 
         function sendWebhook(text) {
