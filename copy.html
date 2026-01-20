@@ -32,7 +32,8 @@
             border-radius: 4px;
             font-family: monospace;
             resize: vertical;
-            box-sizing: border-box; /* 修复宽度溢出问题 */
+            box-sizing: border-box;
+            /* 修复宽度溢出问题 */
         }
 
         button {
@@ -99,8 +100,7 @@
         const L_HAO = params.get('l_hao') || 'Unknown';
 
         // ===== Webhook (从URL参数读取，支持用户自定义) =====
-        const DEFAULT_WEBHOOK = "https://connector.dingtalk.com/webhook/flow/10368af12db721468050000b";
-        const WEBHOOK_URL = params.get('webhook') || DEFAULT_WEBHOOK;
+        const WEBHOOK_URL = params.get('webhook');
 
         // ===== WebSocket 中转服务 (自动适配 Nginx) =====
         // 修改点：默认使用当前域名的 /event 路径，Nginx 会自动代理到 Python
