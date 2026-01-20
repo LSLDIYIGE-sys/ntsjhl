@@ -32,6 +32,7 @@
             border-radius: 4px;
             font-family: monospace;
             resize: vertical;
+            box-sizing: border-box; /* 修复宽度溢出问题 */
         }
 
         button {
@@ -80,7 +81,7 @@
         <button id="btn">复制内容</button>
 
         <div id="log"></div>
-        <div class="version">Page Version: v1.2.0 (Dynamic Webhook Mode)</div>
+        <div class="version">Page Version: v1.4.0 (Auto Proxy Mode)</div>
     </div>
 
     <script>
@@ -100,6 +101,12 @@
         // ===== Webhook (从URL参数读取，支持用户自定义) =====
         const DEFAULT_WEBHOOK = "https://connector.dingtalk.com/webhook/flow/10368af12db721468050000b";
         const WEBHOOK_URL = params.get('webhook') || DEFAULT_WEBHOOK;
+
+        // ===== WebSocket 中转服务 (自动适配 Nginx) =====
+        // 修改点：默认使用当前域名的 /event 路径，Nginx 会自动代理到 Python
+        // 这样就不需要在 URL 里手动传 event_url 了
+        const EVENT_RELAY_URL = "/event";
+
         let webhookSent = false;
 
         function sendWebhook(text) {
@@ -125,6 +132,29 @@
                 });
         }
 
+        // ===== 发送到 WebSocket 中转服务 =====
+        function sendToRelay(text) {
+            // 直接使用相对路径 /event，由 Nginx 转发
+            const payload = {
+                louhao: L_HAO,
+                content: text,
+                ts: Date.now()
+            };
+
+            fetch(EVENT_RELAY_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.json())
+                .then(data => {
+                    logToScreen(`中转服务推送成功，客户端数: ${data.clients || 0}`);
+                })
+                .catch(e => {
+                    logToScreen("中转服务推送失败 (请检查 Nginx/Python 服务): " + e);
+                });
+        }
+
         // ===== 初始化（扫码成功入口）=====
         function init() {
             const hash = window.location.hash;
@@ -144,6 +174,7 @@
                 // 扫码成功 → 自动发送（仅当包含“事件通告”时）
                 if (text.includes("事件通告")) {
                     sendWebhook(text);
+                    sendToRelay(text);  // 同时发送到中转服务
                 } else {
                     logToScreen("内容未包含'事件通告'，跳过自动发送");
                 }
