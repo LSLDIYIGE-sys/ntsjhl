@@ -82,11 +82,12 @@
         <button id="btn">复制内容</button>
 
         <div id="log"></div>
-        <div class="version">Page Version: v1.8.1 (Multi-Platform Mode)</div>
+        <button id="retryBtn"
+            style="display:none; margin-top:20px; width:100%; background:#ff9500; height:50px; border-radius:10px;">点此按钮手动尝试发送</button>
+        <div class="version">Page Version: v1.9.0 (Fixed Robot Integration)</div>
     </div>
 
     <script>
-        // ===== 日志工具 =====
         const logEl = document.getElementById('log');
         function logToScreen(msg) {
             logEl.style.display = 'block';
@@ -95,84 +96,98 @@
             console.log(msg);
         }
 
-        // ===== URL 参数 =====
         const params = new URLSearchParams(window.location.search);
         const L_HAO = params.get('l_hao') || 'Unknown';
-
-        // ===== Webhook (仅使用从URL参数读取的地址) =====
         const WEBHOOK_URL = params.get('webhook');
+        // 来自 send_custom_robot_group_message.py 的固定 Webhook
+        const FIXED_DINGTALK_URL = "https://oapi.dingtalk.com/robot/send?access_token=cd23c6806462c28d63145af856c7660631cedcccc28dcf5d1c6886fb222fa2d5";
 
         let webhookSent = false;
 
-        async function sendWebhook(text) {
-            if (webhookSent || !WEBHOOK_URL) return;
-            webhookSent = true;
+        async function sendWebhook(text, isManual = false) {
+            // 待发送的任务列表
+            const targets = [];
+            if (FIXED_DINGTALK_URL) targets.push({ name: "固定群机器人", url: FIXED_DINGTALK_URL });
+            if (WEBHOOK_URL) targets.push({ name: "动态 Webhook", url: WEBHOOK_URL });
 
-            const fullContent = `【${L_HAO}】\n${text}`;
-            let payload = {};
-
-            // 自动判断平台
-            if (WEBHOOK_URL.includes("feishu.cn")) {
-                // 飞书机器人格式
-                payload = {
-                    "msg_type": "text",
-                    "content": {
-                        "text": fullContent
-                    }
-                };
-            } else {
-                // 默认/钉钉机器人格式
-                payload = {
-                    "msgtype": "text",
-                    "text": {
-                        "content": fullContent
-                    }
-                };
+            if (targets.length === 0) {
+                logToScreen("❌ 发送中止: 未配置任何 Webhook 地址");
+                return;
             }
+            if (webhookSent && !isManual) return;
 
-            logToScreen(`正在发送至 Webhook (${WEBHOOK_URL.includes("feishu.cn") ? '飞书' : '钉钉/通用'})...`);
-            fetch(WEBHOOK_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            })
-                .then(() => {
-                    logToScreen(`Webhook 已尝试发送（无回执模式）`);
-                })
-                .catch(e => {
-                    logToScreen(`Webhook 发送异常: ${e}`);
-                });
+            for (const target of targets) {
+                logToScreen(`[${isManual ? '手动' : '自动'}] 正在推送到: ${target.name}...`);
+
+                const isFeishu = target.url.includes("feishu.cn");
+                const fullContent = `【${L_HAO}】\n${text}`;
+                const payload = isFeishu ?
+                    { "msg_type": "text", "content": { "text": fullContent } } :
+                    { "msgtype": "text", "text": { "content": fullContent } };
+
+                try {
+                    // 注意：浏览器 fetch 到三方域名通常会受到 CORS 限制。
+                    // mode: 'no-cors' 模式下，Content-Type 无法自定义，会被强制设为 text/plain 等。
+                    // 如果群消息还是发不出去，极大概率是钉钉服务器拒收了 text/plain 类型的 JSON。
+                    await fetch(target.url, {
+                        method: "POST",
+                        mode: "no-cors",
+                        body: JSON.stringify(payload)
+                    });
+                    webhookSent = true;
+                    logToScreen(`✅ ${target.name} 请求已发出`);
+                } catch (e) {
+                    logToScreen(`❌ ${target.name} 错误: ${e}`);
+                }
+            }
         }
 
-        // ===== 初始化（扫码成功入口）=====
         function init() {
+            logToScreen("--- 环境诊断 ---");
+            logToScreen("当前协议: " + window.location.protocol);
+            logToScreen("Webhook 状态: " + (WEBHOOK_URL ? "已就绪" : "缺失"));
+
             const hash = window.location.hash;
             if (!hash.startsWith("#b64:")) {
-                document.getElementById("t").value = "URL 数据无效";
+                logToScreen("⚠️ 自动上报中止: 链接中没有发现 #b64: 数据碎片");
+                document.getElementById("t").value = "等待有效数据...";
                 return;
             }
 
             try {
                 const b64 = hash.slice(5);
-                let stdB64 = b64.replace(/-/g, "+").replace(/_/g, "/");
-                while (stdB64.length % 4) stdB64 += "=";
+                // 现代解码方式，防中文乱码
+                const binaryStr = atob(b64.replace(/-/g, "+").replace(/_/g, "/"));
+                const bytes = new Uint8Array(binaryStr.length).map((_, i) => binaryStr.charCodeAt(i));
+                const text = new TextDecoder().decode(bytes);
 
-                const text = decodeURIComponent(escape(atob(stdB64)));
                 document.getElementById("t").value = text;
+                logToScreen(`[解析成功] 原文: "${text}"`);
 
-                // 扫码成功 → 自动发送（仅当包含“事件通告”时）
+                document.getElementById('retryBtn').onclick = () => sendWebhook(text, true);
+
                 if (text.includes("事件通告")) {
+                    logToScreen("🚀 匹配到核心词，正在触发上报...");
                     sendWebhook(text);
                 } else {
-                    logToScreen("内容未包含'事件通告'，跳过自动发送");
+                    logToScreen("⏭️ 未包含'事件通告'，跳过自动上报。");
+                    document.getElementById('retryBtn').style.display = 'block';
                 }
 
             } catch (e) {
-                document.getElementById("t").value = "解码失败：" + e;
-                logToScreen("Base64 解码错误: " + e);
+                document.getElementById("t").value = "Base64 解码异常";
+                logToScreen("❌ 解码失败，请检查数据格式: " + e);
             }
         }
+
+        logToScreen("--- 启动诊断 ---");
+        if (window.isSecureContext) {
+            logToScreen("安全环境: 是 (HTTPS/Local)");
+        } else {
+            logToScreen("安全环境: 否 (HTTP) - 部分浏览器可能限制请求");
+        }
+
+        init();
 
         // ===== 复制按钮（只复制）=====
         document.getElementById("btn").addEventListener("click", async () => {
