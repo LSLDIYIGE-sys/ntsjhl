@@ -84,7 +84,7 @@
         <div id="log"></div>
         <button id="retryBtn"
             style="display:none; margin-top:20px; width:100%; background:#ff9500; height:50px; border-radius:10px;">点此按钮手动尝试发送</button>
-        <div class="version">Page Version: v1.9.0 (Fixed Robot Integration)</div>
+        <div class="version">Page Version: v1.9.2 (Deduplication Fix)</div>
     </div>
 
     <script>
@@ -211,8 +211,6 @@
             btn.textContent = ok ? "已复制 ✅" : "复制失败";
             setTimeout(() => btn.textContent = "复制内容", 3000);
         });
-
-        init();
     </script>
 
 </body>
