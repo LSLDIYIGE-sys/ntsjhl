@@ -82,7 +82,7 @@
         <button id="btn">复制内容</button>
 
         <div id="log"></div>
-        <div class="version">Page Version: v1.4.0 (Auto Proxy Mode)</div>
+        <div class="version">Page Version: v1.5.0 (Direct Send Mode)</div>
     </div>
 
     <script>
@@ -102,21 +102,25 @@
         // ===== Webhook (从URL参数读取，支持用户自定义) =====
         const WEBHOOK_URL = params.get('webhook');
 
-        // ===== WebSocket 中转服务 (自动适配 Nginx) =====
-        // 修改点：默认使用当前域名的 /event 路径，Nginx 会自动代理到 Python
-        // 这样就不需要在 URL 里手动传 event_url 了
-        const EVENT_RELAY_URL = "/event";
-
         let webhookSent = false;
 
         function sendWebhook(text) {
             if (webhookSent) return;
             webhookSent = true;
 
+            // 根据目标 Webhook 可能需要的格式进行初步构造
+            // 默认发送包含楼号和内容的 JSON
             const payload = {
+                msgtype: "text",
+                text: {
+                    content: `【${L_HAO}】\n${text}`
+                },
+                // 保留原始字段增强兼容性
                 louhao: L_HAO,
                 content: text
             };
+
+            logToScreen("正在直接发送 Webhook...");
 
             fetch(WEBHOOK_URL, {
                 method: "POST",
@@ -125,33 +129,10 @@
                 body: JSON.stringify(payload)
             })
                 .then(() => {
-                    logToScreen("扫码成功，Webhook 已发送（无回执模式）");
+                    logToScreen("Webhook 已尝试发送（无回执模式/no-cors）");
                 })
                 .catch(e => {
                     logToScreen("Webhook 发送异常: " + e);
-                });
-        }
-
-        // ===== 发送到 WebSocket 中转服务 =====
-        function sendToRelay(text) {
-            // 直接使用相对路径 /event，由 Nginx 转发
-            const payload = {
-                louhao: L_HAO,
-                content: text,
-                ts: Date.now()
-            };
-
-            fetch(EVENT_RELAY_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            })
-                .then(r => r.json())
-                .then(data => {
-                    logToScreen(`中转服务推送成功，客户端数: ${data.clients || 0}`);
-                })
-                .catch(e => {
-                    logToScreen("中转服务推送失败 (请检查 Nginx/Python 服务): " + e);
                 });
         }
 
@@ -173,8 +154,11 @@
 
                 // 扫码成功 → 自动发送（仅当包含“事件通告”时）
                 if (text.includes("事件通告")) {
-                    sendWebhook(text);
-                    sendToRelay(text);  // 同时发送到中转服务
+                    if (WEBHOOK_URL) {
+                        sendWebhook(text);
+                    } else {
+                        logToScreen("未检测到 Webhook URL 参数，跳过自动发送");
+                    }
                 } else {
                     logToScreen("内容未包含'事件通告'，跳过自动发送");
                 }
