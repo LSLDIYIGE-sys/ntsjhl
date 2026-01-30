@@ -99,46 +99,36 @@
         const params = new URLSearchParams(window.location.search);
         const L_HAO = params.get('l_hao') || 'Unknown';
         const WEBHOOK_URL = params.get('webhook');
-        // 来自 send_custom_robot_group_message.py 的固定 Webhook
-        const FIXED_DINGTALK_URL = "https://oapi.dingtalk.com/robot/send?access_token=cd23c6806462c28d63145af856c7660631cedcccc28dcf5d1c6886fb222fa2d5";
 
         let webhookSent = false;
 
         async function sendWebhook(text, isManual = false) {
-            // 待发送的任务列表
-            const targets = [];
-            if (FIXED_DINGTALK_URL) targets.push({ name: "固定群机器人", url: FIXED_DINGTALK_URL });
-            if (WEBHOOK_URL) targets.push({ name: "动态 Webhook", url: WEBHOOK_URL });
-
-            if (targets.length === 0) {
-                logToScreen("❌ 发送中止: 未配置任何 Webhook 地址");
+            if (!WEBHOOK_URL) {
+                logToScreen("❌ 发送中止: URL 中缺失 `webhook` 参数");
                 return;
             }
             if (webhookSent && !isManual) return;
 
-            for (const target of targets) {
-                logToScreen(`[${isManual ? '手动' : '自动'}] 正在推送到: ${target.name}...`);
+            logToScreen(`[${isManual ? '手动' : '自动'}] 尝试连接: ${WEBHOOK_URL.substring(0, 50)}...`);
 
-                const isFeishu = target.url.includes("feishu.cn");
-                const fullContent = `【${L_HAO}】\n${text}`;
-                const payload = isFeishu ?
-                    { "msg_type": "text", "content": { "text": fullContent } } :
-                    { "msgtype": "text", "text": { "content": fullContent } };
+            const isFeishu = WEBHOOK_URL.includes("feishu.cn");
+            const fullContent = `【${L_HAO}】\n${text}`;
+            const payload = isFeishu ?
+                { "msg_type": "text", "content": { "text": fullContent } } :
+                { "msgtype": "text", "text": { "content": fullContent } };
 
-                try {
-                    // 注意：浏览器 fetch 到三方域名通常会受到 CORS 限制。
-                    // mode: 'no-cors' 模式下，Content-Type 无法自定义，会被强制设为 text/plain 等。
-                    // 如果群消息还是发不出去，极大概率是钉钉服务器拒收了 text/plain 类型的 JSON。
-                    await fetch(target.url, {
-                        method: "POST",
-                        mode: "no-cors",
-                        body: JSON.stringify(payload)
-                    });
-                    webhookSent = true;
-                    logToScreen(`✅ ${target.name} 请求已发出`);
-                } catch (e) {
-                    logToScreen(`❌ ${target.name} 错误: ${e}`);
-                }
+            try {
+                // 注意：浏览器 fetch 到三方域名通常会受到 CORS 限制。
+                await fetch(WEBHOOK_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    body: JSON.stringify(payload)
+                });
+
+                webhookSent = true;
+                logToScreen("✅ 请求已通过浏览器 fetch 发出 (no-cors 模式)");
+            } catch (e) {
+                logToScreen("❌ 网络连接层发生致命错误: " + e);
             }
         }
 
