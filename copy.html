@@ -82,7 +82,7 @@
         <button id="btn">复制内容</button>
 
         <div id="log"></div>
-        <div class="version">Page Version: v1.5.0 (Direct Send Mode)</div>
+        <div class="version">Page Version: v1.8.0 (Multi-Platform Mode)</div>
     </div>
 
     <script>
@@ -99,29 +99,40 @@
         const params = new URLSearchParams(window.location.search);
         const L_HAO = params.get('l_hao') || 'Unknown';
 
-        // ===== Webhook (从URL参数读取，支持用户自定义) =====
+        // ===== Webhook (仅使用从URL参数读取的地址) =====
         const WEBHOOK_URL = params.get('webhook');
 
         let webhookSent = false;
 
-        function sendWebhook(text) {
-            if (webhookSent) return;
+        async function sendWebhook(text) {
+            if (webhookSent || !WEBHOOK_URL) return;
             webhookSent = true;
 
-            // 根据目标 Webhook 可能需要的格式进行初步构造
-            // 默认发送包含楼号和内容的 JSON
-            const payload = {
-                msgtype: "text",
-                text: {
-                    content: `【${L_HAO}】\n${text}`
-                },
-                // 保留原始字段增强兼容性
-                louhao: L_HAO,
-                content: text
-            };
+            const fullContent = `【${L_HAO}】\n${text}`;
+            let payload = {};
 
-            logToScreen("正在直接发送 Webhook...");
+            // 自动判断平台
+            if (WEBHOOK_URL.includes("feishu.cn")) {
+                // 飞书机器人格式
+                payload = {
+                    "msg_type": "text",
+                    "content": {
+                        "text": fullContent
+                    }
+                };
+            } else {
+                // 默认/钉钉机器人格式
+                payload = {
+                    "msgtype": "text",
+                    "text": {
+                        "content": fullContent
+                    },
+                    "louhao": L_HAO,
+                    "content": text
+                };
+            }
 
+            logToScreen(`正在发送至 Webhook (${WEBHOOK_URL.includes("feishu.cn") ? '飞书' : '钉钉/通用'})...`);
             fetch(WEBHOOK_URL, {
                 method: "POST",
                 mode: "no-cors",
@@ -129,10 +140,10 @@
                 body: JSON.stringify(payload)
             })
                 .then(() => {
-                    logToScreen("Webhook 已尝试发送（无回执模式/no-cors）");
+                    logToScreen(`Webhook 已尝试发送（无回执模式）`);
                 })
                 .catch(e => {
-                    logToScreen("Webhook 发送异常: " + e);
+                    logToScreen(`Webhook 发送异常: ${e}`);
                 });
         }
 
@@ -154,11 +165,7 @@
 
                 // 扫码成功 → 自动发送（仅当包含“事件通告”时）
                 if (text.includes("事件通告")) {
-                    if (WEBHOOK_URL) {
-                        sendWebhook(text);
-                    } else {
-                        logToScreen("未检测到 Webhook URL 参数，跳过自动发送");
-                    }
+                    sendWebhook(text);
                 } else {
                     logToScreen("内容未包含'事件通告'，跳过自动发送");
                 }
